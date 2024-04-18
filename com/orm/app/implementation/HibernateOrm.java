@@ -3,6 +3,7 @@ package com.orm.app.implementation;
 import com.orm.app.annotations.Column;
 import com.orm.app.annotations.PrimaryKey;
 import com.orm.app.annotations.Table;
+import com.orm.app.config.DbConnection;
 import org.h2.tools.Server;
 
 import java.lang.reflect.Field;
@@ -21,19 +22,20 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class HibernateOrm<T> {
-    private final Connection connection;
+    private Connection connection;
     private final AtomicLong idIncrementer =new AtomicLong(0L);
     private final AtomicInteger index=new AtomicInteger(0);
-    public static <T> HibernateOrm<T> getConnection(String connectionString) throws SQLException {
-        return new HibernateOrm<>(connectionString);
+
+    public HibernateOrm(DbConnection connectionProperties) throws SQLException {
+        this.connection= DriverManager.getConnection(connectionProperties.getUrl(),connectionProperties.getUserName(),connectionProperties.getPassword());
     }
-    private HibernateOrm(String connectionString) throws SQLException {
-        Server.main();
-        this.connection= DriverManager.getConnection(connectionString,"sa","");
+
+    public static <T> HibernateOrm<T> getConnection(DbConnection connectionProperties) throws SQLException {
+        return new HibernateOrm<>(connectionProperties);
     }
 
     public void write(T t) throws SQLException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
-        createTableIfNotPresent(t);
+        prepareCreateStatement(t);
         Class<?> aClass = t.getClass();
         String tableName;
         if (aClass.isAnnotationPresent(Table.class)) {
@@ -86,8 +88,45 @@ public class HibernateOrm<T> {
         }
     }
 
-    private void createTableIfNotPresent(T t) {
-        /* Create the table here if not already present*/
+    private void prepareCreateStatement(T t) {
+        Class<?> clazz = t.getClass();
+        String tableName=clazz.getSimpleName();
+        String columnName = null;
+        String primaryKey=null;
+        String type;
+        StringBuilder createSql=new StringBuilder("CREATE TABLE IF NOT EXISTS "+tableName).append("(\n");
+        if(clazz.isAnnotationPresent(Table.class)&&!clazz.getAnnotation(Table.class).name().isEmpty()){
+            tableName=clazz.getAnnotation(Table.class).name();
+        }
+        List<Field> declaredFields = Arrays.stream(clazz.getDeclaredFields()).toList();
+        for (Field declaredField : declaredFields) {
+            type=extractClassName(declaredField);
+            if(declaredField.isAnnotationPresent(PrimaryKey.class)){
+                primaryKey=columnName=!declaredField.getAnnotation(PrimaryKey.class).name().isEmpty()?declaredField.getAnnotation(PrimaryKey.class).name():declaredField.getName().toUpperCase();
+            }
+            if(declaredField.isAnnotationPresent(Column.class)){
+                columnName=!declaredField.getAnnotation(Column.class).name().isEmpty()?declaredField.getAnnotation(Column.class).name():declaredField.getName().toUpperCase();
+            }
+            switch (type){
+                case "Integer", "int":
+                    createSql.append(columnName).append(" INT,\n");
+                    break;
+                case "Long","long":
+                    createSql.append(columnName).append(" BIGINT,\n");
+                    break;
+                case "String":
+                    createSql.append(columnName).append(" VARCHAR,\n");
+                    break;
+                case "Double","double":
+                    createSql.append(columnName).append(" NUMERIC,\n");
+                    break;
+                default:
+                    throw new IllegalStateException("Unexpected value: " + extractClassName(declaredField));
+            }
+            createSql.append("PRIMARY KEY "+primaryKey+" );");
+            System.out.println(createSql);
+        }
+
     }
 
     private Method createGetter(Field declaredField, T t) throws NoSuchMethodException {
@@ -96,7 +135,7 @@ public class HibernateOrm<T> {
     }
 
     private String extractClassName(Field declaredField) {
-        int length = declaredField.getGenericType().getTypeName().split(".").length;
-        return declaredField.getGenericType().getTypeName().split(".")[length-1];
+        int length = declaredField.getGenericType().getTypeName().split("\\.").length;
+        return declaredField.getGenericType().getTypeName().split("\\.")[length-1];
     }
 }
