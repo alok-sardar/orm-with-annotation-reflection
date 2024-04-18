@@ -3,6 +3,7 @@ package com.orm.app.implementation;
 import com.orm.app.annotations.Column;
 import com.orm.app.annotations.PrimaryKey;
 import com.orm.app.annotations.Table;
+import org.h2.tools.Server;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
@@ -20,21 +21,27 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class HibernateOrm<T> {
-    private Connection connection;
-    private AtomicLong idIncrementer =new AtomicLong(0L);
-    private AtomicInteger index=new AtomicInteger(0);
-    public static <T> HibernateOrm<T> getConnection() throws SQLException {
-        return new HibernateOrm<>();
+    private final Connection connection;
+    private final AtomicLong idIncrementer =new AtomicLong(0L);
+    private final AtomicInteger index=new AtomicInteger(0);
+    public static <T> HibernateOrm<T> getConnection(String connectionString) throws SQLException {
+        return new HibernateOrm<>(connectionString);
     }
-    private HibernateOrm() throws SQLException {
-        this.connection= DriverManager.getConnection("");
+    private HibernateOrm(String connectionString) throws SQLException {
+        Server.main();
+        this.connection= DriverManager.getConnection(connectionString,"sa","");
     }
 
     public void write(T t) throws SQLException, NoSuchMethodException, InvocationTargetException, IllegalAccessException {
+        createTableIfNotPresent(t);
         Class<?> aClass = t.getClass();
-        String tableName=aClass.isAnnotationPresent(Table.class)?
-                        !aClass.getAnnotation(Table.class).name().isEmpty()?aClass.getAnnotation(Table.class).name(): aClass.getSimpleName()
-                                                : aClass.getSimpleName();
+        String tableName;
+        if (aClass.isAnnotationPresent(Table.class)) {
+            tableName = !aClass.getAnnotation(Table.class).name().isEmpty()?
+                                    aClass.getAnnotation(Table.class).name() : aClass.getSimpleName();
+        }else{
+            tableName = aClass.getSimpleName();
+        }
         StringBuilder query=new StringBuilder().append("insert into ").append(tableName).append("(");
         List<Field> declaredFields = Arrays.stream(aClass.getDeclaredFields()).toList();
         StringJoiner columnJoiner=new StringJoiner(",");
@@ -77,6 +84,10 @@ public class HibernateOrm<T> {
             }
             preparedStatement.executeUpdate();
         }
+    }
+
+    private void createTableIfNotPresent(T t) {
+        /* Create the table here if not already present*/
     }
 
     private Method createGetter(Field declaredField, T t) throws NoSuchMethodException {
