@@ -3,10 +3,11 @@ package com.orm.app;
 import com.orm.app.entity.TransactionHistory;
 import com.orm.app.implementation.HibernateOrm;
 
+import java.lang.reflect.InvocationTargetException;
 import java.sql.SQLException;
 
 public class Application {
-    public static void main(String[] args) throws SQLException, IllegalAccessException {
+    public static void main(String[] args) throws SQLException, IllegalAccessException, InvocationTargetException, NoSuchMethodException {
         TransactionHistory alok=new TransactionHistory(155552,"Alok","Credit", 50000.0);
         TransactionHistory tiyasa=new TransactionHistory(155553,"tiyasa","Debit", 50000.0);
         TransactionHistory anita=new TransactionHistory(155554,"anita","Debit", 50000.0);
