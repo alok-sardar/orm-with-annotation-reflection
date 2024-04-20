@@ -21,6 +21,5 @@ public class Application {
         TransactionHistory rajesh=new TransactionHistory(155556,"rajesh","Credit", 50000.0);
         HibernateOrm<TransactionHistory> hibernateOrm=HibernateOrm.getConnection(dbConnection);
         hibernateOrm.write(alok);
-        Thread.currentThread().join();
     }
 }

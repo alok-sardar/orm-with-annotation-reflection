@@ -5,14 +5,12 @@ import com.orm.app.annotations.PrimaryKey;
 import com.orm.app.annotations.Table;
 import com.orm.app.config.DbConnection;
 import com.orm.app.config.H2Loader;
-import org.h2.tools.Server;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.sql.*;
 import java.util.Arrays;
-import java.util.Enumeration;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -61,7 +59,9 @@ public class HibernateOrm<T> {
         int length = columnJoiner.toString().split(",").length;
         String qMarks = IntStream.range(0, length).mapToObj(e -> "?").collect(Collectors.joining(","));
         query.append(columnJoiner).append(")").append("values(").append(qMarks).append(")");
+        AtomicInteger counter=new AtomicInteger(0);
         try (PreparedStatement preparedStatement = connection.prepareStatement(query.toString())) {
+            System.out.println("Update block: "+counter.incrementAndGet());
             if (primaryKey != null && primaryKey.getGenericType()==Long.class) {
                 preparedStatement.setLong(index.incrementAndGet(), idIncrementer.incrementAndGet());
             }
@@ -87,6 +87,7 @@ public class HibernateOrm<T> {
                         throw new IllegalStateException("Unexpected value: " + extractClassName(declaredField));
                 }
             }
+            preparedStatement.executeUpdate();
         }
     }
 
