@@ -4,16 +4,15 @@ import com.orm.app.annotations.Column;
 import com.orm.app.annotations.PrimaryKey;
 import com.orm.app.annotations.Table;
 import com.orm.app.config.DbConnection;
+import com.orm.app.config.H2Loader;
 import org.h2.tools.Server;
 
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.sql.Connection;
-import java.sql.DriverManager;
-import java.sql.PreparedStatement;
-import java.sql.SQLException;
+import java.sql.*;
 import java.util.Arrays;
+import java.util.Enumeration;
 import java.util.List;
 import java.util.StringJoiner;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -22,12 +21,13 @@ import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 public class HibernateOrm<T> {
-    private Connection connection;
+    private final Connection connection;
     private final AtomicLong idIncrementer =new AtomicLong(0L);
     private final AtomicInteger index=new AtomicInteger(0);
 
     public HibernateOrm(DbConnection connectionProperties) throws SQLException {
-        this.connection= DriverManager.getConnection(connectionProperties.getUrl(),connectionProperties.getUserName(),connectionProperties.getPassword());
+        this.connection= DriverManager.getConnection(connectionProperties.getUrl(),connectionProperties.getUserName(),"password");
+        H2Loader.startWebserver(connection);
     }
 
     public static <T> HibernateOrm<T> getConnection(DbConnection connectionProperties) throws SQLException {
@@ -66,6 +66,9 @@ public class HibernateOrm<T> {
                 preparedStatement.setLong(index.incrementAndGet(), idIncrementer.incrementAndGet());
             }
             for (Field declaredField : declaredFields) {
+                if(declaredField.isAnnotationPresent(PrimaryKey.class)){
+                    continue;
+                }
                 Method getter=createGetter(declaredField,t);
                 switch (extractClassName(declaredField)){
                     case "Integer", "int":
@@ -84,49 +87,54 @@ public class HibernateOrm<T> {
                         throw new IllegalStateException("Unexpected value: " + extractClassName(declaredField));
                 }
             }
-            preparedStatement.executeUpdate();
         }
     }
 
-    private void prepareCreateStatement(T t) {
+    private void prepareCreateStatement(T t) throws SQLException {
         Class<?> clazz = t.getClass();
         String tableName=clazz.getSimpleName();
         String columnName = null;
-        String primaryKey=null;
+        StringBuilder primaryKey=new StringBuilder();
         String type;
-        StringBuilder createSql=new StringBuilder("CREATE TABLE IF NOT EXISTS "+tableName).append("(\n");
+        StringBuilder createSql=new StringBuilder();
+        StringJoiner tableColumnJoiner=new StringJoiner(",");
         if(clazz.isAnnotationPresent(Table.class)&&!clazz.getAnnotation(Table.class).name().isEmpty()){
             tableName=clazz.getAnnotation(Table.class).name();
         }
+        createSql.append("CREATE TABLE IF NOT EXISTS ").append(tableName).append("(\n");
         List<Field> declaredFields = Arrays.stream(clazz.getDeclaredFields()).toList();
         for (Field declaredField : declaredFields) {
             type=extractClassName(declaredField);
             if(declaredField.isAnnotationPresent(PrimaryKey.class)){
-                primaryKey=columnName=!declaredField.getAnnotation(PrimaryKey.class).name().isEmpty()?declaredField.getAnnotation(PrimaryKey.class).name():declaredField.getName().toUpperCase();
+                primaryKey.append(columnName=!declaredField.getAnnotation(PrimaryKey.class).name().isEmpty()?
+                                    declaredField.getAnnotation(PrimaryKey.class).name():declaredField.getName().toUpperCase());
+                createSql.append(primaryKey.append(" ").append(extractClassName(declaredField).toUpperCase()).append(" NOT NULL,"));
+                continue;
             }
             if(declaredField.isAnnotationPresent(Column.class)){
                 columnName=!declaredField.getAnnotation(Column.class).name().isEmpty()?declaredField.getAnnotation(Column.class).name():declaredField.getName().toUpperCase();
             }
             switch (type){
                 case "Integer", "int":
-                    createSql.append(columnName).append(" INT,\n");
+                    tableColumnJoiner.add("\n"+columnName+ " INT");
                     break;
                 case "Long","long":
-                    createSql.append(columnName).append(" BIGINT,\n");
+                    tableColumnJoiner.add("\n"+columnName+ " BIGINT");
                     break;
                 case "String":
-                    createSql.append(columnName).append(" VARCHAR,\n");
+                    tableColumnJoiner.add("\n"+columnName+ " VARCHAR");
                     break;
                 case "Double","double":
-                    createSql.append(columnName).append(" NUMERIC,\n");
+                    tableColumnJoiner.add("\n"+columnName+ " NUMERIC");
                     break;
                 default:
                     throw new IllegalStateException("Unexpected value: " + extractClassName(declaredField));
             }
-            createSql.append("PRIMARY KEY "+primaryKey+" );");
-            System.out.println(createSql);
         }
-
+        createSql.append(tableColumnJoiner).append("\n").append(");");
+        System.out.println(createSql);
+        Statement statement = connection.createStatement();
+        statement.execute(createSql.toString());
     }
 
     private Method createGetter(Field declaredField, T t) throws NoSuchMethodException {

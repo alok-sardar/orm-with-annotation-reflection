@@ -1,11 +1,10 @@
 package com.orm.app.config;
 
-import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.Properties;
 
-public class ConfigLoader {
+public class PropertiesLoader {
     public Properties loadProperties() throws IOException {
         Properties properties = new Properties();
 
